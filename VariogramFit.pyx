@@ -11,10 +11,7 @@ from scipy import special
 #from scipy.stats import gamma
 from numpy import linalg
 
-
-
 ## Performance Metrics
-
 def RMSE(x,y):
     Erro = numpy.square(numpy.subtract(x,y))
     if Erro.any < 0:
@@ -29,6 +26,7 @@ def RMSE(x,y):
     # N = Nugget Effect
     # a = Dimensionless exponent
     # v = Matern parameter
+
 def SVExponential(h,x):
     cdef float S = x[0]
     cdef float R = x[1]
@@ -148,42 +146,3 @@ def optFunMaster(x,SVExp,j,VarFunArr):
         temp2.append(SVExp[i][1])
     cdef float F = RMSE(temp,temp2)
     return F, [], fail
-
-## Serious stuff starts here!
-
-    
-def KrigInterp(ModOpt,POI,Loc,VarFunArr,xopt,k,CovMea,MeaRow):
-    # Calculate distances between stations        
-    SVr = numpy.array(CovMea)
-    if linalg.det(CovMea) == 0:
-        print('Non-singular covriance matrix - Sorry, cannot invert')
-        return(9999,9999)
-    InvSVr = linalg.inv(SVr)
-    
-    POID = numpy.zeros([len(POI),len(Loc)])
-    SVm = numpy.zeros([len(POI),len(Loc)])
-    # Set interpolation targets
-    #POID = [[1487.,0806.,1746.,1044.,1170.,1513.]]
-    
-    for i in xrange(0,len(POI)):
-        for j in xrange(0,len(Loc)):
-            # Calculate distance from target to stations
-            POID[i][j] = numpy.sqrt((POI[i][0]-Loc[j][0])**2 +
-                                   (POI[i][1]-Loc[j][1])**2 )
-            # Calculate variance with between observation and targets
-            SVm[i][j] = VarFunArr[ModOpt](POID[i][j],xopt)
-
-    WM = []
-    Z = []
-    SP = []
-
-    for i in xrange(0,len(SVm)):
-        WM.append(numpy.dot(InvSVr,numpy.transpose(numpy.array(SVm[i]))))
-        Ztemp = numpy.dot(WM[i],MeaRow)
-        Z.append(numpy.clip(Ztemp,0,max(MeaRow))) ## cutoff at 0 and max prec
-        S = xopt[0]*numpy.ones(len(SVm[i]))-SVm[i]
-        SP.append(numpy.dot(WM[i],numpy.transpose(S)))
-        
-
-#    
-    return Z,SP
