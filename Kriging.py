@@ -15,7 +15,7 @@ you will need the following libraries, not coming alongside with the Anaconda
 ditribution (it is recommended that you use this one, but any will do)
     
     -> pyx import - some functions are compiled in Cython to improve 
-        calculations performance, so you will need this to use them.
+        performance, so you will need this to use them.
     -> csv - Read and write csv files    
     -> numpy - for obvious reasons
     -> cPickle - To store data in native python binary files.
@@ -66,171 +66,182 @@ Input files description
 
 ## Data Load from files ##
 #------------------------------------------------------------------------------
-Loc = []
-with open('SiteInfo.csv','rb') as SiteInfo:
-    Lines = csv.reader(SiteInfo)
-    Lines.next()
-    for row in Lines:
-        Loc.append([float(row[1]),float(row[2])])
-print 'Gauge Location, Imported'
-print '' 
-
-POI = []
-CN = []
-with open('XYTargets.csv','rb') as POIf:
-    Lines = csv.reader(POIf)
-    Lines.next()
-    for row in Lines:
-        POI.append([float(row[0]),float(row[1])])
-        CN.append(int(row[2]))
-print 'Sampling Points, Imported'
-print ''    
-        
-Prec = []
-with open('DataRecord.csv','rb') as Data:
-    Lines = csv.reader(Data)
-    Lines.next()
-    for row in Lines:
-        Prec.append([float(x) for x in row[:]])
-print 'Data, Imported'
-print ''
+def load_data(SiteInfo, XYTargets, DataRecord):
+    Loc = []
+    with open('SiteInfo.csv','rb') as SiteInfo:
+        Lines = csv.reader(SiteInfo)
+        Lines.next()
+        for row in Lines:
+            Loc.append([float(row[1]),float(row[2])])
+    print 'Gauge Location, Imported'
+    print '' 
+    
+    POI = []
+    CN = []
+    with open('XYTargets.csv','rb') as POIf:
+        Lines = csv.reader(POIf)
+        Lines.next()
+        for row in Lines:
+            POI.append([float(row[0]),float(row[1])])
+            CN.append(int(row[2]))
+    print 'Sampling Points, Imported'
+    print ''    
+            
+    Prec = []
+    with open('DataRecord.csv','rb') as Data:
+        Lines = csv.reader(Data)
+        Lines.next()
+        for row in Lines:
+            Prec.append([float(x) for x in row[:]])
+    print 'Data, Imported'
+    print ''
+    return Loc, POI, CN, Prec
 #------------------------------------------------------------------------------
 
 
 ## Kriging Preprocessing
 #------------------------------------------------------------------------------
 ## Removal of no precipitation events
-WetMeas = []
-for i in xrange(0,len(Prec)):
-    if numpy.max(Prec[i]) > 3:
-        WetMeas.append(Prec[i])    
 
-## Measurement covariance
-CovMea = numpy.cov(numpy.transpose(WetMeas))
-if linalg.det(CovMea) == 0:
-    print 'Warning, Covariance Matrix is non-signular. Check your data'
-else:
-    print 'Determinant Covariance Matrix', str(linalg.det(CovMea))
-print ''
+def Kriging_preprocessing(Prec):
+    WetMeas = []
+    for i in xrange(0,len(Prec)):
+        if numpy.max(Prec[i]) > 3:
+            WetMeas.append(Prec[i])    
+    
+    ## Measurement covariance
+    CovMea = numpy.cov(numpy.transpose(WetMeas))
+    if linalg.det(CovMea) == 0:
+        print 'Warning, Covariance Matrix is non-signular. Check your data'
+    else:
+        print 'Determinant Covariance Matrix', str(linalg.det(CovMea))
+    print ''
+    return WetMeas, CovMea
 #------------------------------------------------------------------------------
 
 
 ## Experimental semivariogram calculation
 #------------------------------------------------------------------------------
-Dis = numpy.zeros((len(Loc),len(Loc)))
-for i in xrange(0, len(Loc)):
-    j = 0
-    for j in xrange(0, len(Loc)):
-        Dis[i][j] = numpy.sqrt((Loc[i][0]-Loc[j][0])**2 +
-                              (Loc[i][1]-Loc[j][1])**2)
-print 'Distance Matrix - Done'
-print ''
-
-## Experimental Semivariogram
-SVExp = []
-for i in xrange(0,len(CovMea)-1):
-    for j in xrange(i+1,len(CovMea)):
-        Cov = CovMea[i][j]
-        Lag = Dis[i][j]
-        SVExp.append([Lag,Cov])
-        
-print 'Experimental semivariogram - Done'
-print ''
+def exp_semivariogram(Loc, CovMea):
+    Dis = numpy.zeros((len(Loc),len(Loc)))
+    for i in xrange(0, len(Loc)):
+        j = 0
+        for j in xrange(0, len(Loc)):
+            Dis[i][j] = numpy.sqrt((Loc[i][0]-Loc[j][0])**2 +
+                                  (Loc[i][1]-Loc[j][1])**2)
+    print 'Distance Matrix - Done'
+    print ''
+    
+    ## Experimental Semivariogram
+    SVExp = []
+    for i in xrange(0,len(CovMea)-1):
+        for j in xrange(i+1,len(CovMea)):
+            Cov = CovMea[i][j]
+            Lag = Dis[i][j]
+            SVExp.append([Lag,Cov])
+            
+    print 'Experimental semivariogram - Done'
+    print ''
+    return Dis, SVExp
 #------------------------------------------------------------------------------
 
 
 ## Theoretical variogram fit
 #------------------------------------------------------------------------------
-
-# Array with functions to be called from the Variograms library
-VarFunArr = [VariogramFit.SVExponential, VariogramFit.SVGaussian, 
-             VariogramFit.SVSpherical, VariogramFit.SVCubic,
-             VariogramFit.SVPentaspherical, VariogramFit.SVSinehole, 
-             VariogramFit.SVPower, VariogramFit.SVMatern]
-
-# Names of functions for display only
-optFunNam = ['Exponential','Gaussian','Spherical','Cubic',
-             'Pentaspherical','Sinehole','Power','Matern']
-
-# Boundaries semivariogram parameters
-Sb = (0.01,400) # Limit for the sill
-Rb = (2,20) # Limit for the range
-Nb = (0,400) # Limit for the Nugget effect
-ab = (0,2) # Limit for a in power variogram
-vb = (0,1000) # Limit for Matern v parameters
-VecBound = (Sb,Rb,Nb,ab,vb)
-
-# Initial seed for variogram fit
-sr = random.uniform(Sb[0],Sb[1])
-rr = random.uniform(Rb[0],Rb[1])
-nr = random.uniform(Nb[0],Nb[1])
-ar = random.uniform(ab[0],ab[1])
-vr = random.uniform(vb[0],vb[1])
-
-Var = []
-Res = []
-Mdl = [] 
-
-# Wrapper of minimisation function (RMSE) for semivariogram fitting
-def OptFun(x,*args):
-    F, g, fail = VariogramFit.optFunMaster(x,SVExp,j,VarFunArr)
-    if F == 9999:
-        fail = 1
-    else:
-        Var.append(x)
-        Res.append(F)
-        Mdl.append(j)
-    return F, g, fail
+def variogram_fit(SVExp, Sb=(0.01,400), Rb=(2,20), Nb=(0,400),
+                  ab=(0,2), vb=(0,1000)):
+    # Array with functions to be called from the Variograms library
+    VarFunArr = [VariogramFit.SVExponential, VariogramFit.SVGaussian, 
+                 VariogramFit.SVSpherical, VariogramFit.SVCubic,
+                 VariogramFit.SVPentaspherical, VariogramFit.SVSinehole, 
+                 VariogramFit.SVPower, VariogramFit.SVMatern]
     
-print 'Initialising Variogram fit'
-print ''
-
-# Optimisation starts to minimise differences between experimental and 
-# theoretical semivariograms
-for j in xrange(0,len(VarFunArr)):
+    # Names of functions for display only
+    optFunNam = ['Exponential','Gaussian','Spherical','Cubic',
+                 'Pentaspherical','Sinehole','Power','Matern']
     
-    print 'Variogram Fitting ' + optFunNam[j]
+    # Boundaries semivariogram parameters
+    #Sb = (0.01,400) # Limit for the sill
+    #Rb = (2,20) # Limit for the range
+    #Nb = (0,400) # Limit for the Nugget effect
+    #ab = (0,2) # Limit for a in power variogram
+    #vb = (0,1000) # Limit for Matern v parameters
+    
+    # Initial seed for variogram fit
+    sr = random.uniform(Sb[0],Sb[1])
+    rr = random.uniform(Rb[0],Rb[1])
+    nr = random.uniform(Nb[0],Nb[1])
+    ar = random.uniform(ab[0],ab[1])
+    vr = random.uniform(vb[0],vb[1])
+    return sr, rr, nr, ar, vr
+    
+    Var = []
+    Res = []
+    Mdl = [] 
+    
+    # Wrapper of minimisation function (RMSE) for semivariogram fitting
+    def OptFun(x,*args):
+        F, g, fail = VariogramFit.optFunMaster(x,SVExp,j,VarFunArr)
+        if F == 9999:
+            fail = 1
+        else:
+            Var.append(x)
+            Res.append(F)
+            Mdl.append(j)
+        return F, g, fail
+        
+    print 'Initialising Variogram fit'
     print ''
     
-    VarProb = Optimization('Variogram Fitting: ' + optFunNam[j], OptFun)
-    VarProb.addObj('RMSE')
-    VarProb.addVar('Sill','c',lower=Sb[0],upper=Sb[1],value=sr)
-    VarProb.addVar('Range','c',lower=Rb[0],upper=Rb[1],value=rr)
-    VarProb.addVar('Nugget','c',lower=Nb[0],upper=Nb[1],value=nr)
-    VarProb.addVar('Exponent (a)','c',lower=ab[0],upper=ab[1],value=ar)
-    VarProb.addVar('Rank (v)','c',lower=vb[0],upper=vb[1],value=vr)
+    # Optimisation starts to minimise differences between experimental and 
+    # theoretical semivariograms
+    for j in xrange(0,len(VarFunArr)):
+        
+        print 'Variogram Fitting ' + optFunNam[j]
+        print ''
+        
+        VarProb = Optimization('Variogram Fitting: ' + optFunNam[j], OptFun)
+        VarProb.addObj('RMSE')
+        VarProb.addVar('Sill','c',lower=Sb[0],upper=Sb[1],value=sr)
+        VarProb.addVar('Range','c',lower=Rb[0],upper=Rb[1],value=rr)
+        VarProb.addVar('Nugget','c',lower=Nb[0],upper=Nb[1],value=nr)
+        VarProb.addVar('Exponent (a)','c',lower=ab[0],upper=ab[1],value=ar)
+        VarProb.addVar('Rank (v)','c',lower=vb[0],upper=vb[1],value=vr)
+        
+        args = (SVExp, j, VarFunArr, Var, Res, Mdl)
+        optmz = ALHSO()
+        optmz(VarProb)
     
-    args = (SVExp, j, VarFunArr, Var, Res, Mdl)
-    optmz = ALHSO()
-    optmz(VarProb)
-
-    print VarProb.solution(0)
-    print ''    
-
-# Get position of best semivariogram
-k = numpy.argmin(Res)
-xopt = Var[k]
-ModOpt = Mdl[k]
-del Var
-del Res
-del Mdl
-
-print 'Theoretical variogram fit - Done!'
-print ''
+        print VarProb.solution(0)
+        print ''    
+    
+    # Get position of best semivariogram
+    k = numpy.argmin(Res)
+    xopt = Var[k]
+    ModOpt = Mdl[k]
+    del Var
+    del Res
+    del Mdl
+    
+    print 'Theoretical variogram fit - Done!'
+    print ''
+    return xopt, ModOpt, VarFunArr
 #------------------------------------------------------------------------------
 
 ## Kriging routine
 #------------------------------------------------------------------------------
-MaxDist = xopt[1]/3.0 #Maximum influence distance in first try
-MinNumSt = 3 #Minimum number of stations present to make the interpolation
+
+#MaxDist = xopt[1]/3.0 #Maximum influence distance in first try
+#MinNumSt = 3 #Minimum number of stations present to make the interpolation
 f = numpy.zeros(len(Prec[0])) #Default value when no precipitation is detected
 
-for i in xrange(1,max(CN)+1): 
-        
+#for i in xrange(1,max(CN)+1): 
+def do_krig(MaxDist, MinNumSt, POI, Loc, Prec, CovMea, ModOpt, xopt, VarFunArr,
+            ID, CN):        
     # Select only the targets within the catchment
     POIC = []
     for j in xrange(0,len(POI)):
-        if i == CN[j]:
+        if ID == CN[j]:
             POIC.append(POI[j])
     
     # Reduce measurements to relevant locations for the targets
@@ -281,20 +292,22 @@ for i in xrange(1,max(CN)+1):
             ZAvg.append(numpy.average(TempRes[0]))
         if ii%100 == 0:
             print 'Interpolated precipitation register '+ str(ii)
+    
+    return Z, SP, ZAvg
     print 'Next Catchment'
     #--------------------------------------------------------------------------
     
     
     # Save data into pickled and CSV files
     #--------------------------------------------------------------------------
-    
+def data_save(Z, SP, ZAvg, ID):
     # Precipitation Map
-    with open('PrecMap-cat'+str(i)+'.pkl','w') as DataFile:
+    with open('PrecMap-cat'+str(ID)+'.pkl','w') as DataFile:
         cPickle.dump(Z,DataFile)
     print 'Precipitation map - Pickled'
     print ''
     
-    with open('PrecMap-cat'+str(i)+'.csv', 'wb') as csvfile:
+    with open('PrecMap-cat'+str(ID)+'.csv', 'wb') as csvfile:
         spamwriter = csv.writer(csvfile, delimiter=',',
                                 quotechar=',', 
                                 quoting=csv.QUOTE_MINIMAL)        
@@ -304,12 +317,12 @@ for i in xrange(1,max(CN)+1):
     print ''    
     
     # Uncertainty Map
-    with open('UncMap-cat'+str(i)+'.pkl','w') as DataFile:
+    with open('UncMap-cat'+str(ID)+'.pkl','w') as DataFile:
         cPickle.dump(SP,DataFile)
     print 'Uncertainty map - Pickled'
     print ''
     
-    with open('UncMap-cat'+str(i)+'.csv', 'wb') as csvfile:
+    with open('UncMap-cat'+str(ID)+'.csv', 'wb') as csvfile:
         spamwriter = csv.writer(csvfile, delimiter=',',
                                 quotechar=',', 
                                 quoting=csv.QUOTE_MINIMAL)        
@@ -319,12 +332,12 @@ for i in xrange(1,max(CN)+1):
     print ''                
             
     # Average catchment precipitation
-    with open('AvgPrec-cat'+str(i)+'.pkl','w') as DataFile:
+    with open('AvgPrec-cat'+str(ID)+'.pkl','w') as DataFile:
         cPickle.dump(ZAvg,DataFile)
     print 'Average Precipitation map - Pickled'
     print ''
 
-    with open('AvgPrec-cat'+str(i)+'.csv', 'wb') as csvfile:
+    with open('AvgPrec-cat'+str(ID)+'.csv', 'wb') as csvfile:
         spamwriter = csv.writer(csvfile, delimiter=',',
                                 quotechar=',', 
                                 quoting=csv.QUOTE_MINIMAL)        
@@ -332,3 +345,4 @@ for i in xrange(1,max(CN)+1):
             spamwriter.writerow([ZAvg[j]])
     print 'Average Precipitation map - CSV-ed'
     print ''
+    return
